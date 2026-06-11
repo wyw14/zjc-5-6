@@ -1,9 +1,25 @@
+type MonsterType = 'normal' | 'fast' | 'tank';
+
 interface Question {
   id: number;
   expression: string;
   correctAnswer: number;
   options: number[];
+  monsterType: MonsterType;
 }
+
+interface MonsterConfig {
+  color: string;
+  eyeColor: string;
+  speed: number;
+  requiredHits: number;
+}
+
+const MONSTER_CONFIGS: Record<MonsterType, MonsterConfig> = {
+  normal: { color: '#e74c3c', eyeColor: '#f1c40f', speed: 0.3, requiredHits: 1 },
+  fast: { color: '#2ecc71', eyeColor: '#3498db', speed: 0.6, requiredHits: 1 },
+  tank: { color: '#9b59b6', eyeColor: '#e67e22', speed: 0.15, requiredHits: 3 },
+};
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -31,7 +47,7 @@ let particles: Particle[] = [];
 interface WarriorState { x: number; y: number; swinging: boolean; swingTimer: number; facingLeft: boolean; }
 let warrior: WarriorState;
 
-interface MonsterState { x: number; y: number; targetX: number; alive: boolean; dying: boolean; deathTimer: number; hitFlash: number; }
+interface MonsterState { x: number; y: number; targetX: number; alive: boolean; dying: boolean; deathTimer: number; hitFlash: number; type: MonsterType; hits: number; requiredHits: number; }
 let monster: MonsterState;
 
 let damageFlash = 0;
@@ -50,7 +66,7 @@ function initPositions() {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
   warrior = { x: w * 0.2, y: h * 0.55, swinging: false, swingTimer: 0, facingLeft: false };
-  monster = { x: w * 0.85, y: h * 0.55, targetX: w * 0.65, alive: false, dying: false, deathTimer: 0, hitFlash: 0 };
+  monster = { x: w * 0.85, y: h * 0.55, targetX: w * 0.65, alive: false, dying: false, deathTimer: 0, hitFlash: 0, type: 'normal', hits: 0, requiredHits: 1 };
 }
 
 initPositions();
@@ -151,7 +167,8 @@ function drawWarrior() {
 
 function drawMonster() {
   if (!monster.alive && !monster.dying) return;
-  const { x, y, dying, deathTimer, hitFlash } = monster;
+  const { x, y, dying, deathTimer, hitFlash, type, hits, requiredHits } = monster;
+  const config = MONSTER_CONFIGS[type];
 
   ctx.save();
   ctx.translate(x, y);
@@ -163,8 +180,8 @@ function drawMonster() {
     ctx.scale(scale, scale);
   }
 
-  const bodyColor = hitFlash > 0 ? '#fff' : '#e74c3c';
-  const eyeColor = hitFlash > 0 ? '#e74c3c' : '#f1c40f';
+  const bodyColor = hitFlash > 0 ? '#fff' : config.color;
+  const eyeColor = hitFlash > 0 ? config.color : config.eyeColor;
 
   ctx.fillStyle = bodyColor;
   ctx.beginPath();
@@ -225,6 +242,19 @@ function drawMonster() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(q.expression, 0, -51);
+
+    if (requiredHits > 1) {
+      const hpBgW = 50;
+      const hpBarW = hpBgW - 4;
+      const hpPct = hits / requiredHits;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(-hpBgW / 2, -78, hpBgW, 10);
+      ctx.fillStyle = config.color;
+      ctx.fillRect(-hpBarW / 2, -76, hpBarW * hpPct, 6);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px "Segoe UI", "PingFang SC", sans-serif';
+      ctx.fillText(`${hits}/${requiredHits}`, 0, -73);
+    }
   }
 
   ctx.restore();
@@ -276,7 +306,7 @@ function update() {
 
   if (monster.alive && !monster.dying) {
     if (monster.x > monster.targetX) {
-      monster.x -= 0.3;
+      monster.x -= MONSTER_CONFIGS[monster.type].speed;
     }
   }
 
@@ -339,12 +369,16 @@ function showQuestion() {
     btn.disabled = false;
   });
 
+  const config = MONSTER_CONFIGS[q.monsterType];
   monster.x = canvas.clientWidth * 0.85;
   monster.targetX = canvas.clientWidth * 0.65;
   monster.alive = true;
   monster.dying = false;
   monster.deathTimer = 0;
   monster.hitFlash = 0;
+  monster.type = q.monsterType;
+  monster.hits = 0;
+  monster.requiredHits = config.requiredHits;
 
   isLocked = false;
 }
@@ -413,14 +447,37 @@ function handleAnswer(idx: number) {
     warrior.swinging = true;
     warrior.swingTimer = 0;
     monster.hitFlash = 8;
+    monster.hits++;
 
-    setTimeout(() => {
-      monster.alive = false;
-      monster.dying = true;
-      monster.deathTimer = 0;
-      spawnParticles(monster.x, monster.y - 10, 25, '#e74c3c');
-      spawnParticles(monster.x, monster.y - 10, 10, '#f5c542');
-    }, 200);
+    const config = MONSTER_CONFIGS[monster.type];
+    spawnParticles(monster.x, monster.y - 10, 10, config.color);
+
+    if (monster.hits >= monster.requiredHits) {
+      setTimeout(() => {
+        monster.alive = false;
+        monster.dying = true;
+        monster.deathTimer = 0;
+        spawnParticles(monster.x, monster.y - 10, 25, config.color);
+        spawnParticles(monster.x, monster.y - 10, 10, '#f5c542');
+      }, 200);
+
+      currentIndex++;
+      updateHUD();
+
+      setTimeout(() => {
+        showQuestion();
+      }, 800);
+    } else {
+      updateHUD();
+      setTimeout(() => {
+        optionBtns.forEach((btn, i) => {
+          btn.textContent = String(q.options[i]);
+          btn.className = 'option-btn';
+          btn.disabled = false;
+        });
+        isLocked = false;
+      }, 500);
+    }
   } else {
     hp--;
     damageFlash = 15;
@@ -432,14 +489,14 @@ function handleAnswer(idx: number) {
       }, 800);
       return;
     }
+
+    currentIndex++;
+    updateHUD();
+
+    setTimeout(() => {
+      showQuestion();
+    }, 1000);
   }
-
-  currentIndex++;
-  updateHUD();
-
-  setTimeout(() => {
-    showQuestion();
-  }, correct ? 800 : 1000);
 }
 
 optionBtns.forEach((btn, i) => {

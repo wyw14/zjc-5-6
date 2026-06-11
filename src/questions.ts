@@ -1,8 +1,11 @@
+type MonsterType = 'normal' | 'fast' | 'tank';
+
 interface Question {
   id: number;
   expression: string;
   correctAnswer: number;
   options: number[];
+  monsterType: MonsterType;
 }
 
 function randInt(min: number, max: number): number {
@@ -43,7 +46,9 @@ function generateQuestion(id: number): Question {
     }
   }
 
-  return { id, expression, correctAnswer: answer, options: shuffle([...optionSet]) };
+  const types: MonsterType[] = ['normal', 'fast', 'tank'];
+  const monsterType = types[randInt(0, 2)];
+  return { id, expression, correctAnswer: answer, options: shuffle([...optionSet]), monsterType };
 }
 
 export function generateQuestions(count: number = 50): Question[] {
